@@ -1,9 +1,11 @@
 #include "stdafx.h"
 #include "TakeBreak.h"
+#include "Settings.h"
 
 #define MAX_LOADSTRING 100
 #define WM_TRAY_MESSAGE (WM_USER + 1)
 #define ID_TRACK_EXIT (WM_USER + 2)
+#define ID_TRACK_SETTINGS (WM_USER + 3)
 
 // Global Variables:
 HINSTANCE hInst;								// current instance
@@ -24,12 +26,18 @@ LRESULT CALLBACK	WndProc(HWND, UINT, WPARAM, LPARAM);
 
 const int Minutes = 60 * 1000;
 const int Seconds = 1000;
-const int NotifyTime = 45 * Minutes;
 const int FollowUpTime = 5 * Minutes;
 const int MeasuredTime = 25 * Seconds;
 
+int GetNotifyTime()
+{
+    Settings::Data data;
+    Settings::GetData(&data);
+    return data.interval * Minutes;
+}
+
 DWORD WINAPI TrackWork(LPVOID lpParam){
-	int totalTime = NotifyTime;
+    int totalTime = GetNotifyTime();
 	int counter = 0;
 	int extendedCounter = 0;
 	for (;;){
@@ -46,20 +54,22 @@ DWORD WINAPI TrackWork(LPVOID lpParam){
 		}else{
 			counter = 0;
 			extendedCounter = 0;
-			totalTime = NotifyTime;
+            totalTime = GetNotifyTime();
 		}
 
 		if (counter >= totalTime){
+            totalTime = FollowUpTime;
+            counter = 0;
+
 			WCHAR szMessage[MAX_LOADSTRING] = { 0 };
 			swprintf_s(szMessage, szBreakMessage, extendedCounter / Minutes);
-			totalTime = FollowUpTime;
+
 			notifydData.uTimeout = 10000;
 			notifydData.uFlags = NIF_INFO;
 			notifydData.dwInfoFlags = NIIF_INFO;
 			wcscpy_s(notifydData.szInfoTitle, sizeof(wchar_t) * wcslen(szBreakMessageHeader), szBreakMessageHeader);
 			wcscpy_s(notifydData.szInfo, sizeof(wchar_t) * wcslen(szMessage), szMessage);
 			Shell_NotifyIcon(NIM_MODIFY, &notifydData);
-			counter = 0;
 		}
 	}
 	SetEvent(hCleanEvent);
@@ -136,6 +146,8 @@ BOOL InitInstance(HINSTANCE hInstance, int nCmdShow){
 	}
 
 	hMenu = CreatePopupMenu();
+    AppendMenu(hMenu, MF_STRING, ID_TRACK_SETTINGS, TEXT("Settings..."));
+    AppendMenu(hMenu, MF_SEPARATOR, 0, NULL);
 	AppendMenu(hMenu, MF_STRING, ID_TRACK_EXIT, TEXT("Exit"));
 
 	hEvent = CreateEvent(NULL, FALSE, FALSE, NULL);
@@ -163,6 +175,11 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam){
 		case ID_TRACK_EXIT:
 			DestroyWindow(hWnd);
 			break;
+
+        case ID_TRACK_SETTINGS:
+            Settings::LaunchSettings();
+            break;
+
 		default:
 			return DefWindowProc(hWnd, message, wParam, lParam);
 		}
