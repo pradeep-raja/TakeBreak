@@ -1,8 +1,12 @@
 #include "stdafx.h"
+#include "Commctrl.h"
 #include "Settings.h"
+#include "Preferences.h"
 #include "resource.h"
-#include <Shlobj.h>
-#include "Shlwapi.h"
+
+#pragma comment(linker,"\"/manifestdependency:type='win32' \
+name='Microsoft.Windows.Common-Controls' version='6.0.0.0' \
+processorArchitecture='*' publicKeyToken='6595b64144ccf1df' language='*'\"")
 
 extern HINSTANCE hInst;
 
@@ -22,73 +26,6 @@ static Option options[] =
     Option(90, L"1 hour 30 minutes"),
     Option(105, L"1 hour 45 minutes"),
     Option(120, L"2 Hours")
-};
-
-class Preferences
-{
-public:
-    Preferences()
-    {
-        if (SUCCEEDED(SHGetFolderPathW(NULL, CSIDL_COMMON_APPDATA, NULL, 0, m_path)))
-        {
-            if (PathAppend(m_path, L"TakeBreak"))
-            {
-                CreateDirectory(m_path, NULL);
-            }
-        }
-    }
-
-    void Save(int selection)
-    {
-        WCHAR file[256] = { 0 };
-        wcscpy_s(file, sizeof(file)/sizeof(WCHAR), m_path);
-        PathAppend(file, L"data");
-
-        FILE* fp = NULL;
-        _wfopen_s(&fp, file, L"wb");
-
-        if (fp)
-        {
-            char buf[128] = { 0 };
-            _itoa_s(selection, buf, 10);
-            fwrite(buf, 1, sizeof(buf) / sizeof(char), fp);
-            fclose(fp);
-        }
-    }
-
-    int Get()
-    {
-        WCHAR file[256] = { 0 };
-        wcscpy_s(file, sizeof(file)/sizeof(WCHAR), m_path);
-        PathAppend(file, L"data");
-
-        int sel = -1;
-
-        if (PathFileExists(file))
-        {
-            FILE* fp = NULL;
-            _wfopen_s(&fp, file, L"rb+");;
-
-            if (fp)
-            {
-                char buf[128] = { 0 };
-                fread(buf, 1, sizeof(buf) / sizeof(char), fp);
-                fclose(fp);
-                sel = atoi(buf);
-            }
-        }
-        
-        if (-1 == sel)
-        {
-            sel = 1;
-            Save(sel);
-        }
-
-        return sel;
-    }
-
-private:
-    WCHAR m_path[MAX_PATH];
 };
 
 static Preferences prefObj;
@@ -118,9 +55,12 @@ namespace Settings
         switch (message)
         {
             case WM_INITDIALOG:
-            {
-                HBRUSH brush = CreateSolidBrush(RGB(255, 0, 0));
-                SetClassLongPtr(hwndDlg, GCLP_HBRBACKGROUND, (LONG)brush);
+            {  
+                HICON hIcon = LoadIcon(hInst, MAKEINTRESOURCE(IDI_TAKEBREAK));
+                if (hIcon)
+                {
+                    SendMessage(hwndDlg, WM_SETICON, ICON_SMALL, (LPARAM)hIcon);
+                }
 
                 HWND hwndTimeDropdown = GetDlgItem(hwndDlg, IDC_COMBO1);
                 const int entries = sizeof(options) / sizeof(options[0]);
@@ -131,6 +71,9 @@ namespace Settings
                 }
 
                 SendMessage(hwndTimeDropdown, CB_SETCURSEL, (WPARAM)prefObj.Get(), 0);
+
+                HWND hwndRunOnStartCheckBox = GetDlgItem(hwndDlg, IDC_CHECK_STARTUP_RUN);
+                SendMessage(hwndRunOnStartCheckBox, BM_SETCHECK, prefObj.IsRunOnStartUp() ? BST_CHECKED : BST_UNCHECKED, 0);
                 return TRUE;
             }
 
@@ -138,6 +81,13 @@ namespace Settings
             {
                 switch (LOWORD(wParam))
                 {
+                    case IDC_CHECK_STARTUP_RUN:
+                    {
+                        BOOL checked = SendDlgItemMessage(hwndDlg, IDC_CHECK_STARTUP_RUN, BM_GETCHECK, 0, 0);
+                        Button_SetElevationRequiredState(GetDlgItem(hwndDlg, IDOK), checked != prefObj.IsRunOnStartUp());
+                        break;
+                    }
+
                     case IDOK:
                     {
                         int sel = SendMessage(GetDlgItem(hwndDlg, IDC_COMBO1), (UINT)CB_GETCURSEL, (WPARAM)0, (LPARAM)0);
@@ -145,6 +95,12 @@ namespace Settings
                         if (prefObj.Get() != sel)
                         {
                             prefObj.Save(sel);
+                        }
+
+                        BOOL checked = SendDlgItemMessage(hwndDlg, IDC_CHECK_STARTUP_RUN, BM_GETCHECK, 0, 0);
+                        if (checked != prefObj.IsRunOnStartUp())
+                        {
+                            prefObj.RunOnStartUp(checked);
                         }
 
                         isRunning = false;

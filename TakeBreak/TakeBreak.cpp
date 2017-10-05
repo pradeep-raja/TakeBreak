@@ -1,4 +1,5 @@
 #include "stdafx.h"
+#include "Commctrl.h"
 #include "TakeBreak.h"
 #include "Settings.h"
 
@@ -98,6 +99,8 @@ int APIENTRY _tWinMain(_In_ HINSTANCE hInstance,
 	if (!InitInstance(hInstance, nCmdShow)){
 		return FALSE;
 	}
+
+    InitCommonControls();
 
 	hAccelTable = LoadAccelerators(hInstance, MAKEINTRESOURCE(IDC_TAKEBREAK));
 
