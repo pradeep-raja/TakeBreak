@@ -16,11 +16,6 @@ Preferences::Preferences()
             CreateDirectory(m_path, NULL);
         }
     }
-
-    if (IsFirstTime())
-    {
-        RunOnStartUp(TRUE);
-    }
 }
 
 BOOL Preferences::IsFirstTime()
@@ -74,7 +69,7 @@ int Preferences::Get()
 
     if (-1 == sel)
     {
-        sel = 1;
+        sel = 0;
         Save(sel);
     }
 

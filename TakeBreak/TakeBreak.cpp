@@ -2,6 +2,7 @@
 #include "Commctrl.h"
 #include "TakeBreak.h"
 #include "Settings.h"
+#include "Preferences.h"
 
 #define MAX_LOADSTRING 100
 #define WM_TRAY_MESSAGE (WM_USER + 1)
@@ -171,6 +172,13 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam){
 	int wmId, wmEvent;
 
 	switch (message){
+    case WM_CREATE:
+        if (Preferences().IsFirstTime())
+        {
+            Settings::LaunchSettings();
+        }
+        break;
+
 	case WM_COMMAND:
 		wmId = LOWORD(wParam);
 		wmEvent = HIWORD(wParam);

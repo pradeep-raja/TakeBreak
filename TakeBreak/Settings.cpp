@@ -62,6 +62,8 @@ namespace Settings
                     SendMessage(hwndDlg, WM_SETICON, ICON_SMALL, (LPARAM)hIcon);
                 }
 
+                BOOL bFirstTime = prefObj.IsFirstTime();
+
                 HWND hwndTimeDropdown = GetDlgItem(hwndDlg, IDC_COMBO1);
                 const int entries = sizeof(options) / sizeof(options[0]);
 
@@ -73,7 +75,16 @@ namespace Settings
                 SendMessage(hwndTimeDropdown, CB_SETCURSEL, (WPARAM)prefObj.Get(), 0);
 
                 HWND hwndRunOnStartCheckBox = GetDlgItem(hwndDlg, IDC_CHECK_STARTUP_RUN);
-                SendMessage(hwndRunOnStartCheckBox, BM_SETCHECK, prefObj.IsRunOnStartUp() ? BST_CHECKED : BST_UNCHECKED, 0);
+
+                if (bFirstTime)
+                {
+                    Button_SetElevationRequiredState(GetDlgItem(hwndDlg, IDOK), TRUE);
+                    SendMessage(hwndRunOnStartCheckBox, BM_SETCHECK, BST_CHECKED, 0);
+                }
+                else
+                {
+                    SendMessage(hwndRunOnStartCheckBox, BM_SETCHECK, prefObj.IsRunOnStartUp() ? BST_CHECKED : BST_UNCHECKED, 0);
+                }
                 return TRUE;
             }
 
