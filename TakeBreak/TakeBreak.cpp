@@ -31,6 +31,25 @@ const int Seconds = 1000;
 const int FollowUpTime = 5 * Minutes;
 const int MeasuredTime = 25 * Seconds;
 
+BOOL CheckWindowsVersion(DWORD dwMajor, DWORD dwMinor, DWORD dwBuild)
+{
+    // Initialize the OSVERSIONINFOEX structure.
+    OSVERSIONINFOEX osvi;
+    ZeroMemory(&osvi, sizeof(OSVERSIONINFOEX));
+    osvi.dwOSVersionInfoSize = sizeof(OSVERSIONINFOEX);
+    osvi.dwMajorVersion = dwMajor;
+    osvi.dwMinorVersion = dwMinor;
+    osvi.dwBuildNumber = dwBuild;
+
+    // Initialize the condition mask.
+    DWORDLONG dwlConditionMask = 0;
+    VER_SET_CONDITION(dwlConditionMask, VER_MAJORVERSION, VER_GREATER_EQUAL);
+    VER_SET_CONDITION(dwlConditionMask, VER_MINORVERSION, VER_GREATER_EQUAL);
+    VER_SET_CONDITION(dwlConditionMask, VER_BUILDNUMBER, VER_GREATER_EQUAL);
+
+    return VerifyVersionInfo(&osvi, VER_MAJORVERSION | VER_MINORVERSION | VER_BUILDNUMBER, dwlConditionMask);
+}
+
 int GetNotifyTime()
 {
     Settings::Data data;
@@ -157,12 +176,21 @@ BOOL InitInstance(HINSTANCE hInstance, int nCmdShow){
 	hEvent = CreateEvent(NULL, FALSE, FALSE, NULL);
 	hCleanEvent = CreateEvent(NULL, FALSE, FALSE, NULL);
 
-	notifydData.cbSize = sizeof(NOTIFYICONDATA);
+    if (CheckWindowsVersion(6, 0, 6))
+        notifydData.cbSize = sizeof(NOTIFYICONDATA);
+    else if (CheckWindowsVersion(6, 0, 0))
+        notifydData.cbSize = NOTIFYICONDATA_V3_SIZE;
+    else if (CheckWindowsVersion(5, 0, 0))
+        notifydData.cbSize = NOTIFYICONDATA_V2_SIZE;
+    else
+        notifydData.cbSize = NOTIFYICONDATA_V1_SIZE;
+
 	notifydData.hWnd = hWnd;
 	notifydData.uID = IDR_MAINFRAME;
-	notifydData.uFlags = NIF_ICON | NIF_MESSAGE;
+    notifydData.uFlags = NIF_ICON | NIF_MESSAGE | NIF_TIP;
 	notifydData.uCallbackMessage = WM_TRAY_MESSAGE;
 	notifydData.hIcon = LoadIcon(hInst, MAKEINTRESOURCE(IDI_TAKEBREAK));
+    _tcscpy_s(notifydData.szTip, 128, _T("TakeBreak"));
 	Shell_NotifyIcon(NIM_ADD, &notifydData);
 
 	return TRUE;
