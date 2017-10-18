@@ -69,7 +69,7 @@ int Preferences::Get()
 
     if (-1 == sel)
     {
-        sel = 0;
+        sel = 1;
         Save(sel);
     }
 
