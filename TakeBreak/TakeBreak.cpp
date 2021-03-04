@@ -15,6 +15,7 @@ WCHAR szTitle[MAX_LOADSTRING];					// The title bar text
 WCHAR szWindowClass[MAX_LOADSTRING];			// the main window class name
 WCHAR szBreakMessage[MAX_LOADSTRING];
 WCHAR szBreakMessageHeader[MAX_LOADSTRING];
+WCHAR szTookBreakMessage[MAX_LOADSTRING];
 HWND hWnd;
 HANDLE hEvent;
 HANDLE hCleanEvent;
@@ -25,11 +26,6 @@ HMENU hMenu;
 ATOM				MyRegisterClass(HINSTANCE hInstance);
 BOOL				InitInstance(HINSTANCE, int);
 LRESULT CALLBACK	WndProc(HWND, UINT, WPARAM, LPARAM);
-
-const int Minutes = 60 * 1000;
-const int Seconds = 1000;
-const int FollowUpTime = 5 * Minutes;
-const int MeasuredTime = 25 * Seconds;
 
 BOOL CheckWindowsVersion(DWORD dwMajor, DWORD dwMinor, DWORD dwBuild)
 {
@@ -50,131 +46,159 @@ BOOL CheckWindowsVersion(DWORD dwMajor, DWORD dwMinor, DWORD dwBuild)
     return VerifyVersionInfo(&osvi, VER_MAJORVERSION | VER_MINORVERSION | VER_BUILDNUMBER, dwlConditionMask);
 }
 
-int GetNotifyTime()
+void Notify(const WCHAR* header, WCHAR* message)
 {
-    Settings::Data data;
-    Settings::GetData(&data);
-    return data.interval * Minutes;
+    notifydData.uTimeout = 10000;
+    notifydData.uFlags = NIF_INFO;
+    notifydData.dwInfoFlags = NIIF_INFO;
+    wcscpy_s(notifydData.szInfoTitle, sizeof(wchar_t)* wcslen(header), header);
+    wcscpy_s(notifydData.szInfo, sizeof(wchar_t)* wcslen(message), message);
+    Shell_NotifyIcon(NIM_MODIFY, &notifydData);
 }
 
-DWORD WINAPI TrackWork(LPVOID lpParam){
-    int totalTime = GetNotifyTime();
-	int counter = 0;
-	int extendedCounter = 0;
-	for (;;){
-		if (WaitForSingleObject(hEvent, MeasuredTime) != WAIT_TIMEOUT) {
-			break;
-		}
+DWORD WINAPI TrackWork(LPVOID lpParam)
+{
+    const int Minutes = 60 * 1000;
+    const int Seconds = 1000;
+    const int MeasuredTime = 25 * Seconds; // Time duration between user input 
+    const int NotifyTime = 45 * Minutes; // Notification time
+    const int FollowupNotifyTime = 10 * Minutes; // Followup notification time
+    const int WaitTime = 25000; // Wait time between each check
 
-		LASTINPUTINFO lii;
-		lii.cbSize = sizeof(LASTINPUTINFO);
-		GetLastInputInfo(&lii);
-		if ((GetTickCount() - lii.dwTime) < MeasuredTime){
-			counter += MeasuredTime;
-			extendedCounter += MeasuredTime;
-		}else{
-			counter = 0;
-			extendedCounter = 0;
-            totalTime = GetNotifyTime();
-		}
+    int totalTime = NotifyTime;
+    int counter = 0; // To keep track of the duration which user is working continuously
+    int extendedCounter = 0;  // Extened counter for telling the time user spent
+    int measureTime = MeasuredTime;
+    for (;;)
+    {
+        if (WaitForSingleObject(hEvent, WaitTime) != WAIT_TIMEOUT) // Wait for some time before check the user input
+        {
+            break;
+        }
 
-		if (counter >= totalTime){
-            totalTime = FollowUpTime;
+        LASTINPUTINFO lii;
+        lii.cbSize = sizeof(LASTINPUTINFO);
+        GetLastInputInfo(&lii);
+        if ((GetTickCount() - lii.dwTime) < measureTime) // Check if computer received any input
+        {
+            counter += WaitTime; // Increment the counter if user input received
+            extendedCounter += WaitTime;
+        }
+        else
+        {
+            if (measureTime == FollowupNotifyTime) // To avoid repeating the "user took a break" message 
+            {
+                Notify(szBreakMessageHeader, szTookBreakMessage);
+            }
+
+			// User took a break. Reset all data.
             counter = 0;
+            extendedCounter = 0;
+            totalTime = NotifyTime;
+            measureTime = MeasuredTime;
+        }
 
-			WCHAR szMessage[MAX_LOADSTRING] = { 0 };
-			swprintf_s(szMessage, szBreakMessage, extendedCounter / Minutes);
-
-			notifydData.uTimeout = 10000;
-			notifydData.uFlags = NIF_INFO;
-			notifydData.dwInfoFlags = NIIF_INFO;
-			wcscpy_s(notifydData.szInfoTitle, sizeof(wchar_t) * wcslen(szBreakMessageHeader), szBreakMessageHeader);
-			wcscpy_s(notifydData.szInfo, sizeof(wchar_t) * wcslen(szMessage), szMessage);
-			Shell_NotifyIcon(NIM_MODIFY, &notifydData);
-		}
-	}
-	SetEvent(hCleanEvent);
-	return 0;
+        if (counter >= totalTime) // User input receiving continuously with maximum break of NotifyTime
+        {
+			// Set values for followup messages
+            totalTime = FollowupNotifyTime;
+            measureTime = FollowupNotifyTime;
+            counter = 0;
+            WCHAR szMessage[MAX_LOADSTRING] = { 0 };
+            swprintf_s(szMessage, szBreakMessage, extendedCounter / Minutes);
+            Notify(szBreakMessageHeader, szMessage);
+        }
+    }
+    SetEvent(hCleanEvent);
+    return 0;
 }
 
 int APIENTRY _tWinMain(_In_ HINSTANCE hInstance,
-	_In_opt_ HINSTANCE hPrevInstance,
-	_In_ LPTSTR    lpCmdLine,
-	_In_ int       nCmdShow){
-	UNREFERENCED_PARAMETER(hPrevInstance);
-	UNREFERENCED_PARAMETER(lpCmdLine);
+                       _In_opt_ HINSTANCE hPrevInstance,
+                       _In_ LPTSTR    lpCmdLine,
+                       _In_ int       nCmdShow)
+{
+    UNREFERENCED_PARAMETER(hPrevInstance);
+    UNREFERENCED_PARAMETER(lpCmdLine);
 
-	MSG msg;
-	HACCEL hAccelTable;
+    MSG msg;
+    HACCEL hAccelTable;
 
-	// Initialize global strings
-	LoadString(hInstance, IDS_APP_TITLE, szTitle, MAX_LOADSTRING);
-	LoadString(hInstance, IDC_TAKEBREAK, szWindowClass, MAX_LOADSTRING);
-	LoadString(hInstance, IDS_BREAK_MESSAGE, szBreakMessage, MAX_LOADSTRING);
-	LoadString(hInstance, IDS_BREAK_MESSAGE_HEADER, szBreakMessageHeader, MAX_LOADSTRING);
+    // Initialize global strings
+    LoadString(hInstance, IDS_APP_TITLE, szTitle, MAX_LOADSTRING);
+    LoadString(hInstance, IDC_TAKEBREAK, szWindowClass, MAX_LOADSTRING);
+    LoadString(hInstance, IDS_BREAK_MESSAGE, szBreakMessage, MAX_LOADSTRING);
+    LoadString(hInstance, IDS_TOOK_BREAK_MESSAGE, szTookBreakMessage, MAX_LOADSTRING);
+    LoadString(hInstance, IDS_BREAK_MESSAGE_HEADER, szBreakMessageHeader, MAX_LOADSTRING);
 
-	MyRegisterClass(hInstance);
+    MyRegisterClass(hInstance);
 
-	// Perform application initialization:
-	if (!InitInstance(hInstance, nCmdShow)){
-		return FALSE;
-	}
+    // Perform application initialization:
+    if (!InitInstance(hInstance, nCmdShow))
+    {
+        return FALSE;
+    }
 
     InitCommonControls();
 
-	hAccelTable = LoadAccelerators(hInstance, MAKEINTRESOURCE(IDC_TAKEBREAK));
+    hAccelTable = LoadAccelerators(hInstance, MAKEINTRESOURCE(IDC_TAKEBREAK));
 
-	DWORD dwThreadId;
-	CreateThread(NULL, 0, TrackWork, NULL, 0, &dwThreadId);
+    DWORD dwThreadId;
+    CreateThread(NULL, 0, TrackWork, NULL, 0, &dwThreadId);
 
-	// Main message loop:
-	while (GetMessage(&msg, NULL, 0, 0)){
-		if (!TranslateAccelerator(msg.hwnd, hAccelTable, &msg)){
-			TranslateMessage(&msg);
-			DispatchMessage(&msg);
-		}
-	}
+    // Main message loop:
+    while (GetMessage(&msg, NULL, 0, 0))
+    {
+        if (!TranslateAccelerator(msg.hwnd, hAccelTable, &msg))
+        {
+            TranslateMessage(&msg);
+            DispatchMessage(&msg);
+        }
+    }
 
-	WaitForSingleObject(hCleanEvent, INFINITE);
-	return (int)msg.wParam;
+    WaitForSingleObject(hCleanEvent, INFINITE);
+    return (int)msg.wParam;
 }
 
-ATOM MyRegisterClass(HINSTANCE hInstance){
-	WNDCLASSEX wcex;
+ATOM MyRegisterClass(HINSTANCE hInstance)
+{
+    WNDCLASSEX wcex;
 
-	wcex.cbSize = sizeof(WNDCLASSEX);
+    wcex.cbSize = sizeof(WNDCLASSEX);
 
-	wcex.style = CS_HREDRAW | CS_VREDRAW;
-	wcex.lpfnWndProc = WndProc;
-	wcex.cbClsExtra = 0;
-	wcex.cbWndExtra = 0;
-	wcex.hInstance = hInstance;
-	wcex.hIcon = LoadIcon(hInstance, MAKEINTRESOURCE(IDI_TAKEBREAK));
-	wcex.hCursor = LoadCursor(NULL, IDC_ARROW);
-	wcex.hbrBackground = (HBRUSH)(COLOR_WINDOW + 1);
-	wcex.lpszMenuName = MAKEINTRESOURCE(IDC_TAKEBREAK);
-	wcex.lpszClassName = szWindowClass;
-	wcex.hIconSm = LoadIcon(wcex.hInstance, MAKEINTRESOURCE(IDI_SMALL));
+    wcex.style = CS_HREDRAW | CS_VREDRAW;
+    wcex.lpfnWndProc = WndProc;
+    wcex.cbClsExtra = 0;
+    wcex.cbWndExtra = 0;
+    wcex.hInstance = hInstance;
+    wcex.hIcon = LoadIcon(hInstance, MAKEINTRESOURCE(IDI_TAKEBREAK));
+    wcex.hCursor = LoadCursor(NULL, IDC_ARROW);
+    wcex.hbrBackground = (HBRUSH)(COLOR_WINDOW + 1);
+    wcex.lpszMenuName = MAKEINTRESOURCE(IDC_TAKEBREAK);
+    wcex.lpszClassName = szWindowClass;
+    wcex.hIconSm = LoadIcon(wcex.hInstance, MAKEINTRESOURCE(IDI_SMALL));
 
-	return RegisterClassEx(&wcex);
+    return RegisterClassEx(&wcex);
 }
 
-BOOL InitInstance(HINSTANCE hInstance, int nCmdShow){
-	hInst = hInstance;
-	hWnd = CreateWindow(szWindowClass, szTitle, WS_OVERLAPPEDWINDOW,
-		CW_USEDEFAULT, 0, CW_USEDEFAULT, 0, NULL, NULL, hInstance, NULL);
+BOOL InitInstance(HINSTANCE hInstance, int nCmdShow)
+{
+    hInst = hInstance;
+    hWnd = CreateWindow(szWindowClass, szTitle, WS_OVERLAPPEDWINDOW,
+                        CW_USEDEFAULT, 0, CW_USEDEFAULT, 0, NULL, NULL, hInstance, NULL);
 
-	if (!hWnd){
-		return FALSE;
-	}
+    if (!hWnd)
+    {
+        return FALSE;
+    }
 
-	hMenu = CreatePopupMenu();
+    hMenu = CreatePopupMenu();
     AppendMenu(hMenu, MF_STRING, ID_TRACK_SETTINGS, TEXT("Settings..."));
     AppendMenu(hMenu, MF_SEPARATOR, 0, NULL);
-	AppendMenu(hMenu, MF_STRING, ID_TRACK_EXIT, TEXT("Exit"));
+    AppendMenu(hMenu, MF_STRING, ID_TRACK_EXIT, TEXT("Exit"));
 
-	hEvent = CreateEvent(NULL, FALSE, FALSE, NULL);
-	hCleanEvent = CreateEvent(NULL, FALSE, FALSE, NULL);
+    hEvent = CreateEvent(NULL, FALSE, FALSE, NULL);
+    hCleanEvent = CreateEvent(NULL, FALSE, FALSE, NULL);
 
     if (CheckWindowsVersion(6, 0, 6))
         notifydData.cbSize = sizeof(NOTIFYICONDATA);
@@ -185,21 +209,23 @@ BOOL InitInstance(HINSTANCE hInstance, int nCmdShow){
     else
         notifydData.cbSize = NOTIFYICONDATA_V1_SIZE;
 
-	notifydData.hWnd = hWnd;
-	notifydData.uID = IDR_MAINFRAME;
+    notifydData.hWnd = hWnd;
+    notifydData.uID = IDR_MAINFRAME;
     notifydData.uFlags = NIF_ICON | NIF_MESSAGE | NIF_TIP;
-	notifydData.uCallbackMessage = WM_TRAY_MESSAGE;
-	notifydData.hIcon = LoadIcon(hInst, MAKEINTRESOURCE(IDI_TAKEBREAK));
+    notifydData.uCallbackMessage = WM_TRAY_MESSAGE;
+    notifydData.hIcon = LoadIcon(hInst, MAKEINTRESOURCE(IDI_TAKEBREAK));
     _tcscpy_s(notifydData.szTip, 128, _T("TakeBreak"));
-	Shell_NotifyIcon(NIM_ADD, &notifydData);
+    Shell_NotifyIcon(NIM_ADD, &notifydData);
 
-	return TRUE;
+    return TRUE;
 }
 
-LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam){
-	int wmId, wmEvent;
+LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
+{
+    int wmId, wmEvent;
 
-	switch (message){
+    switch (message)
+    {
     case WM_CREATE:
         if (Preferences().IsFirstTime())
         {
@@ -207,41 +233,43 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam){
         }
         break;
 
-	case WM_COMMAND:
-		wmId = LOWORD(wParam);
-		wmEvent = HIWORD(wParam);
-		switch (wmId){
-		case ID_TRACK_EXIT:
-			DestroyWindow(hWnd);
-			break;
+    case WM_COMMAND:
+        wmId = LOWORD(wParam);
+        wmEvent = HIWORD(wParam);
+        switch (wmId)
+        {
+        case ID_TRACK_EXIT:
+            DestroyWindow(hWnd);
+            break;
 
         case ID_TRACK_SETTINGS:
             Settings::LaunchSettings();
             break;
 
-		default:
-			return DefWindowProc(hWnd, message, wParam, lParam);
-		}
-		break;
-	case WM_DESTROY:
-		SetEvent(hEvent);
-		Shell_NotifyIcon(NIM_DELETE, &notifydData);
-		PostQuitMessage(0);
-		break;
-	case WM_TRAY_MESSAGE:
-		switch (lParam){
-		case  WM_RBUTTONDOWN:
-			POINT point;
-			GetCursorPos(&point);
-			TrackPopupMenu(hMenu, TPM_RIGHTALIGN, point.x, point.y, 0, hWnd, NULL);
-			break;
-		default:
-			break;
-		}
-		break;
-	default:
-		return DefWindowProc(hWnd, message, wParam, lParam);
-	}
-	return 0;
+        default:
+            return DefWindowProc(hWnd, message, wParam, lParam);
+        }
+        break;
+    case WM_DESTROY:
+        SetEvent(hEvent);
+        Shell_NotifyIcon(NIM_DELETE, &notifydData);
+        PostQuitMessage(0);
+        break;
+    case WM_TRAY_MESSAGE:
+        switch (lParam)
+        {
+        case  WM_RBUTTONDOWN:
+            POINT point;
+            GetCursorPos(&point);
+            TrackPopupMenu(hMenu, TPM_RIGHTALIGN, point.x, point.y, 0, hWnd, NULL);
+            break;
+        default:
+            break;
+        }
+        break;
+    default:
+        return DefWindowProc(hWnd, message, wParam, lParam);
+    }
+    return 0;
 }
 

@@ -12,20 +12,9 @@ extern HINSTANCE hInst;
 
 struct Option
 {
-    Option(int i, WCHAR* pStr) : value(i), pDisplay(pStr){}
+    Option(int i, WCHAR* pStr) : value(i), pDisplay(pStr) {}
     int value = 0;
     WCHAR* pDisplay;
-};
-
-static Option options[] =
-{
-    Option(30, L"30 minutes"),
-    Option(45, L"45 minutes"),
-    Option(60, L"1 hour"),
-    Option(75, L"1 hour 15 minutes"),
-    Option(90, L"1 hour 30 minutes"),
-    Option(105, L"1 hour 45 minutes"),
-    Option(120, L"2 Hours")
 };
 
 static Preferences prefObj;
@@ -33,101 +22,86 @@ static bool isRunning = false;
 
 namespace Settings
 {
-    BOOL CALLBACK DlgProc(HWND hwndDlg, UINT message, WPARAM wParam, LPARAM lParam);
+BOOL CALLBACK DlgProc(HWND hwndDlg, UINT message, WPARAM wParam, LPARAM lParam);
 
-    void LaunchSettings()
+void LaunchSettings()
+{
+    if (!isRunning)
     {
-        if (!isRunning)
+        HWND hwnd = CreateDialog(hInst, MAKEINTRESOURCE(IDD_SETTINGS_DLG), NULL, (DLGPROC)DlgProc);
+        ShowWindow(hwnd, SW_SHOW);
+        isRunning = true;
+    }
+}
+
+BOOL CALLBACK DlgProc(HWND hwndDlg, UINT message, WPARAM wParam, LPARAM lParam)
+{
+    switch (message)
+    {
+    case WM_INITDIALOG:
+    {
+        HICON hIcon = LoadIcon(hInst, MAKEINTRESOURCE(IDI_TAKEBREAK));
+        if (hIcon)
         {
-            HWND hwnd = CreateDialog(hInst, MAKEINTRESOURCE(IDD_SETTINGS_DLG), NULL, (DLGPROC)DlgProc);
-            ShowWindow(hwnd, SW_SHOW);
-            isRunning = true;
+            SendMessage(hwndDlg, WM_SETICON, ICON_SMALL, (LPARAM)hIcon);
         }
-    }
 
-    void GetData(Data* pData)
-    {
-        pData->interval = options[prefObj.Get()].value;
-    }
+        BOOL bFirstTime = prefObj.IsFirstTime();
 
-    BOOL CALLBACK DlgProc(HWND hwndDlg, UINT message, WPARAM wParam, LPARAM lParam)
-    {
-        switch (message)
+        HWND hwndRunOnStartCheckBox = GetDlgItem(hwndDlg, IDC_CHECK_STARTUP_RUN);
+
+        if (bFirstTime)
         {
-            case WM_INITDIALOG:
-            {  
-                HICON hIcon = LoadIcon(hInst, MAKEINTRESOURCE(IDI_TAKEBREAK));
-                if (hIcon)
-                {
-                    SendMessage(hwndDlg, WM_SETICON, ICON_SMALL, (LPARAM)hIcon);
-                }
+            Button_SetElevationRequiredState(GetDlgItem(hwndDlg, IDOK), TRUE);
+            SendMessage(hwndRunOnStartCheckBox, BM_SETCHECK, BST_CHECKED, 0);
+        }
+        else
+        {
+            SendMessage(hwndRunOnStartCheckBox, BM_SETCHECK, prefObj.IsRunOnStartUp() ? BST_CHECKED : BST_UNCHECKED, 0);
+        }
+        return TRUE;
+    }
 
-                BOOL bFirstTime = prefObj.IsFirstTime();
+    case WM_COMMAND:
+    {
+        switch (LOWORD(wParam))
+        {
+        case IDC_CHECK_STARTUP_RUN:
+        {
+            BOOL checked = SendDlgItemMessage(hwndDlg, IDC_CHECK_STARTUP_RUN, BM_GETCHECK, 0, 0);
+            Button_SetElevationRequiredState(GetDlgItem(hwndDlg, IDOK), checked != prefObj.IsRunOnStartUp());
+            break;
+        }
 
-                HWND hwndTimeDropdown = GetDlgItem(hwndDlg, IDC_COMBO1);
-                const int entries = sizeof(options) / sizeof(options[0]);
+        case IDOK:
+        {
+            int sel = SendMessage(GetDlgItem(hwndDlg, IDC_COMBO1), (UINT)CB_GETCURSEL, (WPARAM)0, (LPARAM)0);
 
-                for (int k = 0; k < entries; k++)
-                {
-                    SendMessage(hwndTimeDropdown, (UINT)CB_ADDSTRING, (WPARAM)0, (LPARAM)options[k].pDisplay);
-                }
-
-                SendMessage(hwndTimeDropdown, CB_SETCURSEL, (WPARAM)prefObj.Get(), 0);
-
-                HWND hwndRunOnStartCheckBox = GetDlgItem(hwndDlg, IDC_CHECK_STARTUP_RUN);
-
-                if (bFirstTime)
-                {
-                    Button_SetElevationRequiredState(GetDlgItem(hwndDlg, IDOK), TRUE);
-                    SendMessage(hwndRunOnStartCheckBox, BM_SETCHECK, BST_CHECKED, 0);
-                }
-                else
-                {
-                    SendMessage(hwndRunOnStartCheckBox, BM_SETCHECK, prefObj.IsRunOnStartUp() ? BST_CHECKED : BST_UNCHECKED, 0);
-                }
-                return TRUE;
-            }
-
-            case WM_COMMAND:
+            if (prefObj.Get() != sel)
             {
-                switch (LOWORD(wParam))
-                {
-                    case IDC_CHECK_STARTUP_RUN:
-                    {
-                        BOOL checked = SendDlgItemMessage(hwndDlg, IDC_CHECK_STARTUP_RUN, BM_GETCHECK, 0, 0);
-                        Button_SetElevationRequiredState(GetDlgItem(hwndDlg, IDOK), checked != prefObj.IsRunOnStartUp());
-                        break;
-                    }
-
-                    case IDOK:
-                    {
-                        int sel = SendMessage(GetDlgItem(hwndDlg, IDC_COMBO1), (UINT)CB_GETCURSEL, (WPARAM)0, (LPARAM)0);
-
-                        if (prefObj.Get() != sel)
-                        {
-                            prefObj.Save(sel);
-                        }
-
-                        BOOL checked = SendDlgItemMessage(hwndDlg, IDC_CHECK_STARTUP_RUN, BM_GETCHECK, 0, 0);
-                        if (checked != prefObj.IsRunOnStartUp())
-                        {
-                            prefObj.RunOnStartUp(checked);
-                        }
-
-                        isRunning = false;
-                        DestroyWindow(hwndDlg);
-                        return TRUE;
-                    }
-
-                    case IDCANCEL:
-                    {
-                        isRunning = false;
-                        DestroyWindow(hwndDlg);
-                        return TRUE;
-                    }
-                }
+                prefObj.Save(sel);
             }
+
+            BOOL checked = SendDlgItemMessage(hwndDlg, IDC_CHECK_STARTUP_RUN, BM_GETCHECK, 0, 0);
+            if (checked != prefObj.IsRunOnStartUp())
+            {
+                prefObj.RunOnStartUp(checked);
+            }
+
+            isRunning = false;
+            DestroyWindow(hwndDlg);
+            return TRUE;
         }
-        return FALSE;
+
+        case IDCANCEL:
+        {
+            isRunning = false;
+            DestroyWindow(hwndDlg);
+            return TRUE;
+        }
+        }
     }
+    }
+    return FALSE;
+}
 };

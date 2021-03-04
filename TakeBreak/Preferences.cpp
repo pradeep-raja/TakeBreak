@@ -91,7 +91,7 @@ void Preferences::RunOnStartUp(BOOL flag)
         wsprintf(cmd, L"delete HKCU\\%s /v %s /f", REG_KEY_PATH, REG_KEY);
     }
 
-    // Launch as administrator. 
+    // Launch as administrator.
     SHELLEXECUTEINFO sei = { sizeof(sei) };
     sei.lpVerb = L"runas";
     sei.lpFile = L"reg";
@@ -105,7 +105,7 @@ void Preferences::RunOnStartUp(BOOL flag)
         DWORD dwError = GetLastError();
         if (dwError == ERROR_CANCELLED)
         {
-           // MessageBox(GetForegroundWindow(), L"You have change your mood", L"TakeBreak", MB_OK);
+            // MessageBox(GetForegroundWindow(), L"You have change your mood", L"TakeBreak", MB_OK);
         }
     }
 }
